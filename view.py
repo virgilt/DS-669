@@ -3,11 +3,12 @@ import os
 import imageio
 import numpy as np
 import torch
-from pettingzoo.mpe import simple_speaker_listener_v4
+from pettingzoo.mpe import simple_speaker_listener_v4, simple_tag_v3, simple_spread_v3, simple_push_v3, simple_adversary_v3, simple_crypto_v3
 from PIL import Image, ImageDraw
 
-from agilerl.algorithms.matd3 import MATD3
+from agilerl.algorithms.maddpg import MADDPG
 
+from get_args import get_args
 
 # Define function to return image
 def _label_with_episode_number(frame, episode_num):
@@ -27,13 +28,27 @@ def _label_with_episode_number(frame, episode_num):
 
 
 if __name__ == "__main__":
+    args = get_args()
+
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # Configure the environment
-    env = simple_speaker_listener_v4.parallel_env(
-        continuous_actions=True, render_mode="rgb_array"
-    )
+    env = None
+    if args.env == "simple_tag":
+        env = simple_tag_v3
+    elif args.env == "simple_speaker_listener":
+        env = simple_speaker_listener_v4
+    elif args.env == "simple_spread":
+        env = simple_spread_v3
+    elif args.env == "simple_push":
+        env = simple_push_v3
+    elif args.env == "simple_adversary":
+        env = simple_adversary_v3
+    elif args.env == "simple_crypto":
+        env = simple_crypto_v3
+    env = env.parallel_env(continuous_actions=True, render_mode="rgb_array")
     env.reset()
+
     try:
         state_dim = [env.observation_space(agent).n for agent in env.agents]
         one_hot = True
@@ -56,12 +71,12 @@ if __name__ == "__main__":
     agent_ids = env.agents
 
     # Load the saved agent
-    path = "./models/MATD3/MATD3_trained_agent.pt"
-    matd3 = MATD3.load(path, device)
+    path = "./models/MADDPG/MADDPG_trained_agent_{}.pt".format(args.env)
+    maddpg = MADDPG.load(path, device)
 
     # Define test loop parameters
     episodes = 10  # Number of episodes to test agent on
-    max_steps = 25  # Max number of steps to take in the environment in each episode
+    max_steps = 100  # Max number of steps to take in the environment in each episode
 
     rewards = []  # List to collect total episodic reward
     frames = []  # List to collect frames
@@ -82,10 +97,10 @@ if __name__ == "__main__":
         score = 0
         for _ in range(max_steps):
             # Get next action from agent
-            cont_actions, discrete_action = matd3.get_action(
+            cont_actions, discrete_action = maddpg.get_action(
                 state, training=False, infos=info
             )
-            if matd3.discrete_actions:
+            if maddpg.discrete_actions:
                 action = discrete_action
             else:
                 action = cont_actions
@@ -126,5 +141,5 @@ if __name__ == "__main__":
     gif_path = "./videos/"
     os.makedirs(gif_path, exist_ok=True)
     imageio.mimwrite(
-        os.path.join("./videos/", "speaker_listener.gif"), frames, duration=10
+        os.path.join("./videos/", "{}.gif".format(args.env)), frames, duration=10
     )
